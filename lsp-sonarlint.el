@@ -103,6 +103,12 @@ e.g. `-Xmx1024m`."
   :group 'lsp-sonarlint
   :type 'string)
 
+(defcustom lsp-sonarlint-vscode-plugin-url
+  "https://github.com/SonarSource/sonarlint-vscode/releases/download/3.20.2%2B74272/sonarlint-vscode-3.20.2.vsix"
+  "SonarLint VSCode Plugin VISX file download URL."
+  :group 'lsp-sonarlint
+  :type 'string)
+
 (defcustom lsp-sonarlint-server-download-url
   "https://repox.jfrog.io/repox/sonarsource/org/sonarsource/sonarlint/ls/sonarlint-language-server/2.19.0.72769/sonarlint-language-server-2.19.0.72769.jar"
   "SonarLint Language Server jar file download URL."
@@ -172,9 +178,8 @@ temporary buffer."
   "Start lsp-sonarlint in TCP mode listening to port PORT."
   (-concat
    `("java" "-jar" ,(eval  lsp-sonarlint-server-path)  ,(format "-port=%d" port))
-   (mapcar (lambda (plugin-path) (format "-analyzers=%s" plugin-path))
-           (lsp-sonarlint--plugin-list))))
-
+   '("-analyzers=") (mapcar (lambda (plugin-path) (format "%s" plugin-path))
+			    (lsp-sonarlint--plugin-list))))
 
 (defconst lsp-sonarlint--action-handlers '())
 
@@ -183,7 +188,9 @@ temporary buffer."
    ("sonarlint.testFilePattern" lsp-sonarlint-test-file-pattern)
    ("sonarlint.output.showAnalyzerLogs" lsp-sonarlint-show-analyzer-logs)
    ("sonarlint.output.verboseLogs" lsp-sonarlint-verbose-logs)
-   ("sonarlint.ls.vmargs" lsp-sonarlint-vmargs)))
+   ("sonarlint.ls.vmargs" lsp-sonarlint-vmargs)
+   ;; TODO
+   ("sonarlint.pathToCompileCommands" lsp-sonarlint-vmargs)))
 
 (defun lsp-sonarlint--request-handlers ()
   "SonarLint-specific request handlers.
@@ -206,6 +213,9 @@ See REQUEST-HANDLERS in lsp--client in lsp-mode."
     ;; Some additional java configuration for the project.
     ;; TODO: implement
     (puthash "sonarlint/getJavaConfig" (lambda (_workspace _params) nil) ht)
+    ;; For use in C/C++ mode.
+    ;; TODO: implement
+    (puthash "sonarlint/needCompilationDatabase" (lambda (_workspace _params) nil) ht)
     ht))
 
 (defun lsp-sonarlint--notification-handlers ()
