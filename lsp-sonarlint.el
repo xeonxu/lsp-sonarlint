@@ -213,9 +213,6 @@ See REQUEST-HANDLERS in lsp--client in lsp-mode."
     ;; Some additional java configuration for the project.
     ;; TODO: implement
     (puthash "sonarlint/getJavaConfig" (lambda (_workspace _params) nil) ht)
-    ;; For use in C/C++ mode.
-    ;; TODO: implement
-    (puthash "sonarlint/needCompilationDatabase" (lambda (_workspace _params) nil) ht)
     ht))
 
 (defun lsp-sonarlint--notification-handlers ()
@@ -237,6 +234,11 @@ See NOTIFICATION-HANDLERS in lsp--client in lsp-mode."
     ;; paying attention and will notice anyway.
     (puthash "sonarlint/showNotificationForFirstSecretsIssue" (lambda (_workspace _params) nil) ht)
     (puthash "sonarlint/showRuleDescription" #'lsp-sonarlint--code-action-open-rule ht)
+    ;; TODO
+    (puthash "sonarlint/needCompilationDatabase" (lambda (_workspace _params)
+                                                   (lsp-register-custom-settings
+                                                    '(("sonarlint.pathToCompileCommands" (concat (lsp--suggest-project-root) "compile_commands.json"))))
+                                                   nil) ht)
     ht))
 
 (lsp-register-client
