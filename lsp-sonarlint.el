@@ -52,23 +52,28 @@
   :group 'lsp-sonarlint
   :type 'file)
 
-(defcustom lsp-sonarlint-modes-enabled '(php-mode
-                                         go-mode
-                                         html-mode
-                                         web-mode
-                                         js-mode
-                                         js2-mode
-                                         rjsx-mode
-                                         typescript-mode
-                                         typescript-tsx-mode
-                                         python-mode
-                                         java-mode
-                                         xml-mode
-                                         nxml-mode
-                                         cc-mode
-					 c-mode
-					 c++-mode
-					 )
+(defcustom lsp-sonarlint-modes-enabled '(
+                                         ;; Cfamilies
+                                         "c"
+                                         "cpp"
+                                         "objective-c"
+                                         "cuda"
+                                         ;; php
+                                         "php"
+                                         ;; go
+                                         "go"
+                                         ;; web
+                                         "html"
+                                         ;; javascript
+                                         "js"
+                                         "typescript"
+                                         ;; python
+                                         "python"
+                                         ;; java
+                                         "java"
+                                         ;; xml
+                                         "xml"
+                                         )
   "List of major modes that enable SonarLint backend for LSP mode."
   :group 'lsp-sonarlint
   :type 'file)
@@ -103,15 +108,38 @@ e.g. `-Xmx1024m`."
   :group 'lsp-sonarlint
   :type 'string)
 
+(defconst lsp-sonarlint-vscode-plugin-version-hash-tbl
+  '(("3.21.0" . "%2B74430")
+    ("3.20.2" . "%2B74272"))
+  "Alist of vscode plugin and commit hash.")
+
+(defcustom lsp-sonarlint-vscode-plugin-version
+  "3.21.0"
+  "Specify the version of SonarLint VSCode Plugin."
+  :group 'lsp-sonarlint
+  :type 'string)
+
 (defcustom lsp-sonarlint-vscode-plugin-url
-  "https://github.com/SonarSource/sonarlint-vscode/releases/download/3.20.2%2B74272/sonarlint-vscode-3.20.2.vsix"
+  (let ((vscode-plugin-version-table (assoc lsp-sonarlint-vscode-plugin-version lsp-sonarlint-vscode-plugin-version-hash-tbl)))
+    (when (null vscode-plugin-version-table)
+      ;; Set default value
+      (setq vscode-plugin-version-table '("3.21.0" . "%2B74430")))
+    (let ((vscode-plugin-version (car vscode-plugin-version-table))
+          (vscode-plugin-hash (cdr vscode-plugin-version-table)))
+      (concat "https://github.com/SonarSource/sonarlint-vscode/releases/download/" vscode-plugin-version vscode-plugin-hash  "/sonarlint-vscode-" vscode-plugin-version ".vsix")))
   "SonarLint VSCode Plugin VISX file download URL."
   :group 'lsp-sonarlint
   :type 'string)
 
-(defcustom lsp-sonarlint-server-download-url
-  "https://repox.jfrog.io/repox/sonarsource/org/sonarsource/sonarlint/ls/sonarlint-language-server/2.19.0.72769/sonarlint-language-server-2.19.0.72769.jar"
-  "SonarLint Language Server jar file download URL."
+(defcustom lsp-sonarlint-vscode-plugin-store-path
+  (file-name-concat user-emacs-directory "sonarlint" "download/")
+  "SonarLint VSCode Plugin VISX file store path."
+  :group 'lsp-sonarlint
+  :type 'string)
+
+(defcustom lsp-sonarlint-vscode-plugin-extra-path
+  (file-name-concat user-emacs-directory "sonarlint" "extra/")
+  "SonarLint VSCode Plugin VISX file extra path."
   :group 'lsp-sonarlint
   :type 'string)
 
@@ -132,6 +160,25 @@ The duplicates may occur if the same plugin implements different languages,
 for example sonar-javascript.jar covers both JavaScript and TypeScript.
 If a duplicate occurs, SonarLint will throw an exception."
   (cl-remove-duplicates jars :test #'equal :key (lambda (jar-path) (file-name-base jar-path))))
+
+(defun lsp-sonarlint--download-plugins ()
+  "Check if sonarlint vscode plugin exists. If not, download it from web.
+ And extract it to `lsp-sonarlint-vscode-plugin-extra-path` specified path."
+  (let* ((vscode-plugin--file-name (file-name-with-extension (file-name-base lsp-sonarlint-vscode-plugin-url) (file-name-extension lsp-sonarlint-vscode-plugin-url)))
+         (vscode-plugin--store-file-path (concat lsp-sonarlint-vscode-plugin-store-path vscode-plugin--file-name)))
+    (unless (file-exists-p lsp-sonarlint-vscode-plugin-store-path)
+      (mkdir lsp-sonarlint-vscode-plugin-store-path t))
+    (unless (file-exists-p
+             vscode-plugin--store-file-path)
+      (when (or lsp-sonarlint-plugin-autodownload
+                (yes-or-no-p
+                 (format "sonarlint language server plugin not found, do you want to download it? ")))
+        (url-copy-file lsp-sonarlint-vscode-plugin-url vscode-plugin--store-file-path)))
+    (when (file-exists-p lsp-sonarlint-vscode-plugin-extra-path)
+      (delete-directory lsp-sonarlint-vscode-plugin-extra-path t))
+    (unless (file-exists-p lsp-sonarlint-vscode-plugin-extra-path)
+      (mkdir lsp-sonarlint-vscode-plugin-extra-path t))
+    (lsp-unzip vscode-plugin--store-file-path lsp-sonarlint-vscode-plugin-extra-path)))
 
 (defun lsp-sonarlint--plugin-list ()
   "Check for the enabled extensions and return a path list.
@@ -244,7 +291,7 @@ See NOTIFICATION-HANDLERS in lsp--client in lsp-mode."
 (lsp-register-client
  (make-lsp-client
   :new-connection (lsp-tcp-server-command 'lsp-sonarlint-server-start-fun)
-  :major-modes lsp-sonarlint-modes-enabled
+  :activation-fn (apply 'lsp-activate-on lsp-sonarlint-modes-enabled)
   :priority -1
   :request-handlers (lsp-sonarlint--request-handlers)
   :notification-handlers (lsp-sonarlint--notification-handlers)
