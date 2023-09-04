@@ -44,14 +44,6 @@
   :link '(url-link "https://github.com/emacs-lsp/lsp-sonarlint")
   :package-version '(lsp-mode . "6.4"))
 
-(defcustom lsp-sonarlint-server-path
-  (concat
-   (file-name-directory load-file-name)
-   "server/sonarlint-language-server.jar")
-  "SonarLint Language Server jar file location."
-  :group 'lsp-sonarlint
-  :type 'file)
-
 (defcustom lsp-sonarlint-modes-enabled '(
                                          ;; Cfamilies
                                          "c"
@@ -137,11 +129,17 @@ e.g. `-Xmx1024m`."
   :group 'lsp-sonarlint
   :type 'string)
 
-(defcustom lsp-sonarlint-vscode-plugin-extra-path
-  (file-name-concat user-emacs-directory "sonarlint" "extra/")
-  "SonarLint VSCode Plugin VISX file extra path."
+(defcustom lsp-sonarlint-vscode-plugin-extract-path
+  (file-name-concat user-emacs-directory "sonarlint" "extract/")
+  "SonarLint VSCode Plugin VISX file extract path."
   :group 'lsp-sonarlint
   :type 'string)
+
+(defcustom lsp-sonarlint-server-path
+  (car (directory-files (concat lsp-sonarlint-vscode-plugin-extract-path "extension/server/") t ".*\.jar"))
+  "SonarLint Language Server jar file location."
+  :group 'lsp-sonarlint
+  :type 'file)
 
 (defcustom lsp-sonarlint-plugin-autodownload nil
   "Whether to go ahead and download missing plugins not asking for a confirmation.
@@ -163,50 +161,55 @@ If a duplicate occurs, SonarLint will throw an exception."
 
 (defun lsp-sonarlint--download-plugins ()
   "Check if sonarlint vscode plugin exists. If not, download it from web.
- And extract it to `lsp-sonarlint-vscode-plugin-extra-path` specified path."
+ And extract it to `lsp-sonarlint-vscode-plugin-extract-path` specified path."
   (let* ((vscode-plugin--file-name (file-name-with-extension (file-name-base lsp-sonarlint-vscode-plugin-url) (file-name-extension lsp-sonarlint-vscode-plugin-url)))
          (vscode-plugin--store-file-path (concat lsp-sonarlint-vscode-plugin-store-path vscode-plugin--file-name)))
     (unless (file-exists-p lsp-sonarlint-vscode-plugin-store-path)
       (mkdir lsp-sonarlint-vscode-plugin-store-path t))
-    (unless (file-exists-p
-             vscode-plugin--store-file-path)
+    (unless (file-exists-p vscode-plugin--store-file-path)
       (when (or lsp-sonarlint-plugin-autodownload
                 (yes-or-no-p
                  (format "sonarlint language server plugin not found, do you want to download it? ")))
         (url-copy-file lsp-sonarlint-vscode-plugin-url vscode-plugin--store-file-path)))
-    (when (file-exists-p lsp-sonarlint-vscode-plugin-extra-path)
-      (delete-directory lsp-sonarlint-vscode-plugin-extra-path t))
-    (unless (file-exists-p lsp-sonarlint-vscode-plugin-extra-path)
-      (mkdir lsp-sonarlint-vscode-plugin-extra-path t))
-    (lsp-unzip vscode-plugin--store-file-path lsp-sonarlint-vscode-plugin-extra-path)))
+    (when (file-exists-p lsp-sonarlint-vscode-plugin-extract-path)
+      (delete-directory lsp-sonarlint-vscode-plugin-extract-path t))
+    (unless (file-exists-p lsp-sonarlint-vscode-plugin-extract-path)
+      (mkdir lsp-sonarlint-vscode-plugin-extract-path t))
+    (lsp-unzip vscode-plugin--store-file-path lsp-sonarlint-vscode-plugin-extract-path)))
 
 (defun lsp-sonarlint--plugin-list ()
   "Check for the enabled extensions and return a path list.
 If the analyzer path is not a file, and
 lsp-sonarlint-plugin-autodownload is not nil it offers to
 download the analyzer, and does that."
-  (let* ((lsp-sonarlint--enabled-plugins
-	  (-filter (lambda (member)
-		     (when (eval
-			    (intern (concat (format "%s" (car member) ) "-enabled")))
-		       t))
-		   (custom-group-members 'lsp-sonarlint t))))
+  ;; (when (eq lsp-sonarlint-server-path nil)
+  ;;   (setq lsp-sonarlint-server-path (directory-files (concat lsp-sonarlint-vscode-plugin-extract-path "extension/server/") t ".*\.jar"))
+  ;;   (when (eq lsp-sonarlint-server-path nil)
+  ;;       (lsp-sonarlint--download-plugins)
+  ;;       (setq lsp-sonarlint-server-path (directory-files (concat lsp-sonarlint-vscode-plugin-extract-path "extension/server/") t ".*\.jar"))))
 
-    (lsp-sonarlint--remove-duplicate-plugins
-     (-map (lambda (enabled-member)
-             (let* ((enabled-member--download-url
-                     (eval (intern (concat (format "%s" (car enabled-member) ) "-download-url"))))
-                    (enabled-member--analyzer-path
-                     (eval (intern (concat (format "%s" (car enabled-member) ) "-analyzer-path")))))
-               (unless (file-exists-p
-                        enabled-member--analyzer-path)
-                 (when (or lsp-sonarlint-plugin-autodownload
-                           (yes-or-no-p
-                            (format "%s language plugin not found, do you want to download it? "
-                                    (car enabled-member))))
-                   (url-copy-file enabled-member--download-url enabled-member--analyzer-path)))
-               enabled-member--analyzer-path))
-           lsp-sonarlint--enabled-plugins))))
+  ;; (let* ((lsp-sonarlint--enabled-plugins
+  ;;         (-filter (lambda (member)
+  ;;       	     (when (eval
+  ;;       		    (intern (concat (format "%s" (car member) ) "-enabled")))
+  ;;       	       t))
+  ;;       	   (custom-group-members 'lsp-sonarlint t))))
+  ;;   (lsp-sonarlint--remove-duplicate-plugins
+  ;;    (-map (lambda (enabled-member)
+  ;;            (let* ((enabled-member--download-url
+  ;;                    (eval (intern (concat (format "%s" (car enabled-member) ) "-download-url"))))
+  ;;                   (enabled-member--analyzer-path
+  ;;                    (eval (intern (concat (format "%s" (car enabled-member) ) "-analyzer-path")))))
+  ;;              (unless (file-exists-p
+  ;;                       enabled-member--analyzer-path)
+  ;;                (when (or lsp-sonarlint-plugin-autodownload
+  ;;                          (yes-or-no-p
+  ;;                           (format "sonarlint language server plugin not found, do you want to download it? ")))
+  ;;                  (url-copy-file lsp-sonarlint-vscode-plugin-url enabled-member--analyzer-path)))
+  ;;              enabled-member--analyzer-path))
+  ;;          lsp-sonarlint--enabled-plugins)))
+  (let* ((lsp-sonarlint--analyzers-list (directory-files (concat lsp-sonarlint-vscode-plugin-extract-path "extension/analyzers/") t ".*\.jar")))
+    lsp-sonarlint--analyzers-list))
 
 (defun lsp-sonarlint--code-action-open-rule (_workspace params)
   "Create a buffer with rendered rule from PARAMS text in it.
@@ -223,8 +226,10 @@ temporary buffer."
 
 (defun lsp-sonarlint-server-start-fun (port)
   "Start lsp-sonarlint in TCP mode listening to port PORT."
+  (when (eq lsp-sonarlint-server-path nil)
+    (lsp-sonarlint--download-plugins))
   (-concat
-   `("java" "-jar" ,(eval  lsp-sonarlint-server-path)  ,(format "-port=%d" port))
+   `("java" "-jar" ,(eval lsp-sonarlint-server-path)  ,(format "-port=%d" port))
    '("-analyzers=") (mapcar (lambda (plugin-path) (format "%s" plugin-path))
 			    (lsp-sonarlint--plugin-list))))
 
