@@ -161,7 +161,7 @@ If a duplicate occurs, SonarLint will throw an exception."
 
 (defun lsp-sonarlint--download-plugins ()
   "Check if sonarlint vscode plugin exists. If not, download it from web.
- And extract it to `lsp-sonarlint-vscode-plugin-extract-path` specified path."
+And extract it to `lsp-sonarlint-vscode-plugin-extract-path` specified path."
   (let* ((vscode-plugin--file-name (file-name-with-extension (file-name-base lsp-sonarlint-vscode-plugin-url) (file-name-extension lsp-sonarlint-vscode-plugin-url)))
          (vscode-plugin--store-file-path (concat lsp-sonarlint-vscode-plugin-store-path vscode-plugin--file-name)))
     (unless (file-exists-p lsp-sonarlint-vscode-plugin-store-path)
@@ -169,7 +169,7 @@ If a duplicate occurs, SonarLint will throw an exception."
     (unless (file-exists-p vscode-plugin--store-file-path)
       (when (or lsp-sonarlint-plugin-autodownload
                 (yes-or-no-p
-                 (format "sonarlint language server plugin not found, do you want to download it? ")))
+                 (format "Sonarlint language server plugin not found, do you want to download it? ")))
         (url-copy-file lsp-sonarlint-vscode-plugin-url vscode-plugin--store-file-path)))
     (when (file-exists-p lsp-sonarlint-vscode-plugin-extract-path)
       (delete-directory lsp-sonarlint-vscode-plugin-extract-path t))
@@ -209,7 +209,8 @@ download the analyzer, and does that."
   ;;              enabled-member--analyzer-path))
   ;;          lsp-sonarlint--enabled-plugins)))
   (let* ((lsp-sonarlint--analyzers-list (directory-files (concat lsp-sonarlint-vscode-plugin-extract-path "extension/analyzers/") t ".*\.jar")))
-    lsp-sonarlint--analyzers-list))
+    lsp-sonarlint--analyzers-list
+    ))
 
 (defun lsp-sonarlint--code-action-open-rule (_workspace params)
   "Create a buffer with rendered rule from PARAMS text in it.
@@ -224,13 +225,13 @@ temporary buffer."
     (shr-render-buffer (current-buffer))))
 
 
-(defun lsp-sonarlint-server-start-fun (port)
+(defun lsp-sonarlint-server-start-fun ()
   "Start lsp-sonarlint in TCP mode listening to port PORT."
   (when (eq lsp-sonarlint-server-path nil)
     (lsp-sonarlint--download-plugins))
   (-concat
-   `("java" "-jar" ,(eval lsp-sonarlint-server-path)  ,(format "-port=%d" port))
-   '("-analyzers=") (mapcar (lambda (plugin-path) (format "%s" plugin-path))
+   `("java" "-jar" ,(eval lsp-sonarlint-server-path)  ,(format "-stdio"))
+   '("-analyzers") (mapcar (lambda (plugin-path) (format "%s" plugin-path))
 			    (lsp-sonarlint--plugin-list))))
 
 (defconst lsp-sonarlint--action-handlers '())
@@ -242,7 +243,8 @@ temporary buffer."
    ("sonarlint.output.verboseLogs" lsp-sonarlint-verbose-logs)
    ("sonarlint.ls.vmargs" lsp-sonarlint-vmargs)
    ;; TODO
-   ("sonarlint.pathToCompileCommands" lsp-sonarlint-vmargs)))
+   ("sonarlint.pathToCompileCommands" (lambda () (concat (lsp--suggest-project-root) "compile_commands.json")))
+   ))
 
 (defun lsp-sonarlint--request-handlers ()
   "SonarLint-specific request handlers.
@@ -287,20 +289,21 @@ See NOTIFICATION-HANDLERS in lsp--client in lsp-mode."
     (puthash "sonarlint/showNotificationForFirstSecretsIssue" (lambda (_workspace _params) nil) ht)
     (puthash "sonarlint/showRuleDescription" #'lsp-sonarlint--code-action-open-rule ht)
     ;; TODO
-    (puthash "sonarlint/needCompilationDatabase" (lambda (_workspace _params)
-                                                   (lsp-register-custom-settings
-                                                    '(("sonarlint.pathToCompileCommands" (concat (lsp--suggest-project-root) "compile_commands.json"))))
-                                                   nil) ht)
+    ;; (puthash "sonarlint/needCompilationDatabase" (lambda (_workspace _params)
+    ;;                                                (message "@@@@@@@@@")
+    ;;                                                (lsp-register-custom-settings
+    ;;                                                 '(("sonarlint.pathToCompileCommands" (concat (lsp--suggest-project-root) "compile_commands.json"))))
+    ;;                                                nil) ht)
     ht))
 
 (lsp-register-client
  (make-lsp-client
-  :new-connection (lsp-tcp-server-command 'lsp-sonarlint-server-start-fun)
+  ;; :new-connection (lsp-tcp-server-command 'lsp-sonarlint-server-start-fun)
+  :new-connection (lsp-stdio-connection 'lsp-sonarlint-server-start-fun)
   :activation-fn (apply 'lsp-activate-on lsp-sonarlint-modes-enabled)
   :priority -1
   :request-handlers (lsp-sonarlint--request-handlers)
   :notification-handlers (lsp-sonarlint--notification-handlers)
-  :multi-root t
   :add-on? t
   :server-id 'sonarlint
   :action-handlers (ht<-alist lsp-sonarlint--action-handlers)
