@@ -140,8 +140,10 @@ e.g. `-Xmx1024m`."
   :group 'lsp-sonarlint
   :type 'string)
 
-(defcustom lsp-sonarlint-server-path
-  (car (directory-files (concat lsp-sonarlint-vscode-plugin-extract-path "extension/server/") t ".*\.jar"))
+(defcustom lsp-sonarlint-server-path (let ((server-path (concat lsp-sonarlint-vscode-plugin-extract-path "extension/server/")))
+                                       (if (file-exists-p server-path)
+                                           (car (directory-files (concat lsp-sonarlint-vscode-plugin-extract-path "extension/server/") t ".*\.jar"))
+                                         nil))
   "SonarLint Language Server jar file location."
   :group 'lsp-sonarlint
   :type 'file)
@@ -233,7 +235,8 @@ temporary buffer."
 (defun lsp-sonarlint-server-start-fun (port)
   "Start lsp-sonarlint in TCP mode listening to port PORT."
   (when (eq lsp-sonarlint-server-path nil)
-    (lsp-sonarlint--download-plugins))
+    (if (equal (lsp-sonarlint--download-plugins) 0)
+        (setq lsp-sonarlint-server-path (car (directory-files (concat lsp-sonarlint-vscode-plugin-extract-path "extension/server/") t ".*\.jar")))))
   (-concat
    `("java" "-jar" ,(eval lsp-sonarlint-server-path)  ,(format "-port=%d" port))
    '("-analyzers") (mapcar (lambda (plugin-path) (format "%s" plugin-path))
