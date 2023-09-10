@@ -100,6 +100,11 @@ e.g. `-Xmx1024m`."
   :group 'lsp-sonarlint
   :type 'string)
 
+(lsp-defcustom lsp-sonarlint--compilecommands-path-property ""
+  "Property of compilecommands path."
+  :group 'lsp-sonarlint
+  :lsp-path "sonarlint.pathToCompileCommands")
+
 (defconst lsp-sonarlint-vscode-plugin-version-hash-tbl
   '(("3.21.0" . "%2B74430")
     ("3.20.2" . "%2B74272"))
@@ -225,12 +230,12 @@ temporary buffer."
     (shr-render-buffer (current-buffer))))
 
 
-(defun lsp-sonarlint-server-start-fun ()
+(defun lsp-sonarlint-server-start-fun (port)
   "Start lsp-sonarlint in TCP mode listening to port PORT."
   (when (eq lsp-sonarlint-server-path nil)
     (lsp-sonarlint--download-plugins))
   (-concat
-   `("java" "-jar" ,(eval lsp-sonarlint-server-path)  ,(format "-stdio"))
+   `("java" "-jar" ,(eval lsp-sonarlint-server-path)  ,(format "-port=%d" port))
    '("-analyzers") (mapcar (lambda (plugin-path) (format "%s" plugin-path))
 			    (lsp-sonarlint--plugin-list))))
 
@@ -242,8 +247,7 @@ temporary buffer."
    ("sonarlint.output.showAnalyzerLogs" lsp-sonarlint-show-analyzer-logs)
    ("sonarlint.output.verboseLogs" lsp-sonarlint-verbose-logs)
    ("sonarlint.ls.vmargs" lsp-sonarlint-vmargs)
-   ;; TODO
-   ("sonarlint.pathToCompileCommands" (lambda () (concat (lsp--suggest-project-root) "compile_commands.json")))
+   ;; ("sonarlint.pathToCompileCommands" (lambda () (lsp-sonarlint--get-compilecommands-path)))
    ))
 
 (defun lsp-sonarlint--request-handlers ()
@@ -269,6 +273,19 @@ See REQUEST-HANDLERS in lsp--client in lsp-mode."
     (puthash "sonarlint/getJavaConfig" (lambda (_workspace _params) nil) ht)
     ht))
 
+(defun lsp-sonarlint--get-compilecommands-path (&optional current-dir)
+  "Return the first found path of compile_commands.json file from current directory up to parent directories."
+  (unless current-dir
+    (setq current-dir default-directory))
+  (let* ((target-file (file-name-concat current-dir "compile_commands.json"))
+         (parent-dir (file-name-parent-directory current-dir)))
+    (if (and (file-exists-p current-dir)
+             (not (file-exists-p target-file)))
+        (if parent-dir
+            (lsp-sonarlint--get-compilecommands-path parent-dir)
+          (concat (lsp--suggest-project-root) "compile_commands.json"))
+      target-file)))
+
 (defun lsp-sonarlint--notification-handlers ()
   "SonarLint-specific notification handlers.
 See NOTIFICATION-HANDLERS in lsp--client in lsp-mode."
@@ -288,23 +305,60 @@ See NOTIFICATION-HANDLERS in lsp--client in lsp-mode."
     ;; paying attention and will notice anyway.
     (puthash "sonarlint/showNotificationForFirstSecretsIssue" (lambda (_workspace _params) nil) ht)
     (puthash "sonarlint/showRuleDescription" #'lsp-sonarlint--code-action-open-rule ht)
+    ;; (puthash "workspace/didChangeWorkspaceFolders" (lambda (_workspace _params)
+    ;;                                                  (with-lsp-workspace _workspace
+    ;;                                                  (message "3#########%s" (ht-get (ht-get (lsp-configuration-section "sonarlint") "sonarlint") "pathToCompileCommands"))
+    ;;                                                  (setq lsp-sonarlint--compilecommands-path-property (lambda () (lsp-sonarlint--get-compilecommands-path)))
+    ;;                                                  (lsp--set-configuration (lsp-configuration-section "sonarlint"))
+    ;;                                                  ;; (lsp--set-configuration (lsp-configuration-section "sonarlint"))
+    ;;                                                  ;; (lsp-register-custom-settings
+    ;;                                                  ;;  `(("pathToCompileCommands" ,(lsp-sonarlint--get-compilecommands-path))))
+                                                     
+    ;;                                                  (message "4#########%s" (ht-get (ht-get (lsp-configuration-section "sonarlint") "sonarlint") "pathToCompileCommands")))) ht)
     ;; TODO
-    ;; (puthash "sonarlint/needCompilationDatabase" (lambda (_workspace _params)
-    ;;                                                (message "@@@@@@@@@")
-    ;;                                                (lsp-register-custom-settings
-    ;;                                                 '(("sonarlint.pathToCompileCommands" (concat (lsp--suggest-project-root) "compile_commands.json"))))
-    ;;                                                nil) ht)
-    ht))
+    (puthash "sonarlint/needCompilationDatabase" (lambda (_workspace _params)
+                                                   (message "Try to set sonarlint.pathToCompileCommands to \"%s\"" (lsp-sonarlint--get-compilecommands-path))
+                                                   ;; (lsp--set-custom-property
+                                                   ;;  'pathToCompileCommands (lsp-sonarlint--get-compilecommands-path) "pathToCompileCommands")
+                                                   (with-lsp-workspace _workspace
+                                                     (message "1#########%s" (ht-get (ht-get (lsp-configuration-section "sonarlint") "sonarlint") "pathToCompileCommands"))
+                                                     (setq lsp-sonarlint--compilecommands-path-property (lsp-sonarlint--get-compilecommands-path))
+                                                     (lsp--set-configuration (lsp-configuration-section "sonarlint"))
+                                                     ;; (lsp--set-configuration (lsp-configuration-section "sonarlint"))
+                                                     ;; (lsp-register-custom-settings
+                                                     ;;  `(("pathToCompileCommands" ,(lsp-sonarlint--get-compilecommands-path))))
+                                                     
+                                                     (message "2#########%s" (ht-get (ht-get (lsp-configuration-section "sonarlint") "sonarlint") "pathToCompileCommands")))
+                                                   (add-hook 'window-state-change-hook 'lsp-sonarlint--window-change-hook)
+
+                                                   ) ht) ht))
+
+;; (advice-add 'lsp :before (lambda (&rest _args) (eval '(setf (lsp-session-server-id->folders (lsp-session)) (ht)))))
+(defvar lsp-sonarlint--old-compilecommands-path-property "")
+
+(defun lsp-sonarlint--window-change-hook ()
+  "Hook while window has changed."
+  (message "@@@111")
+  (setq lsp-sonarlint--compilecommands-path-property (lsp-sonarlint--get-compilecommands-path))
+  (when (and lsp-mode
+             c-buffer-is-cc-mode
+             (not (equal lsp-sonarlint--compilecommands-path-property
+                         lsp-sonarlint--old-compilecommands-path-property)))
+    (with-lsp-workspace (lsp-find-workspace 'sonarlint (buffer-file-name))
+      (lsp--set-configuration (lsp-configuration-section "sonarlint"))
+      (setq lsp-sonarlint--old-compilecommands-path-property lsp-sonarlint--compilecommands-path-property)
+      ;; (lsp)
+      (message "@@@222"))))
 
 (lsp-register-client
  (make-lsp-client
-  ;; :new-connection (lsp-tcp-server-command 'lsp-sonarlint-server-start-fun)
-  :new-connection (lsp-stdio-connection 'lsp-sonarlint-server-start-fun)
+  :new-connection (lsp-tcp-server-command 'lsp-sonarlint-server-start-fun)
   :activation-fn (apply 'lsp-activate-on lsp-sonarlint-modes-enabled)
   :priority -1
   :request-handlers (lsp-sonarlint--request-handlers)
   :notification-handlers (lsp-sonarlint--notification-handlers)
   :add-on? t
+  :multi-root t
   :server-id 'sonarlint
   :action-handlers (ht<-alist lsp-sonarlint--action-handlers)
   :initialization-options (lambda ()
@@ -313,6 +367,7 @@ See NOTIFICATION-HANDLERS in lsp--client in lsp-mode."
 			     :productName "Emacs"))
   :initialized-fn (lambda (workspace)
                     (with-lsp-workspace workspace
+                      (setq lsp-sonarlint--old-compilecommands-path-property lsp-sonarlint--compilecommands-path-property)
                       (lsp--set-configuration
                        (lsp-configuration-section "sonarlint"))))))
 
