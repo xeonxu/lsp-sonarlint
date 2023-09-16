@@ -111,53 +111,6 @@
              (lsp-sonarlint-typescript-enabled . ("typescript"))
              (lsp-sonarlint-xml-enabled . ("xml")))))
 
-;; (let* ((lsp-sonarlint--enabled-plugins
-;;         (-filter (lambda (member)
-;;        	           (when (eval
-;;        		          (intern (concat (format "%s" (car member) ) "-enabled")))
-;;        	             t))
-;;        	         (custom-group-members 'lsp-sonarlint t))))
-;;   (lsp-sonarlint--remove-duplicate-plugins
-;;    (-map (lambda (enabled-member)
-;;            (let* ((enabled-member--download-url
-;;                    (eval (intern (concat (format "%s" (car enabled-member) ) "-download-url"))))
-;;                   (enabled-member--analyzer-path
-;;                    (eval (intern (concat (format "%s" (car enabled-member) ) "-analyzer-path")))))
-;;              (unless (file-exists-p
-;;                       enabled-member--analyzer-path)
-;;                (when (or lsp-sonarlint-plugin-autodownload
-;;                          (yes-or-no-p
-;;                           (format "sonarlint language server plugin not found, do you want to download it? ")))
-;;                  (url-copy-file lsp-sonarlint-vscode-plugin-url enabled-member--analyzer-path)))
-;;              enabled-member--analyzer-path))
-;;          lsp-sonarlint--enabled-plugins)))
-
-;; (defcustom lsp-sonarlint-modes-enabled '(
-;;                                          ;; Cfamilies
-;;                                          "c"
-;;                                          "cpp"
-;;                                          "objective-c"
-;;                                          "cuda"
-;;                                          ;; php
-;;                                          "php"
-;;                                          ;; go
-;;                                          "go"
-;;                                          ;; web
-;;                                          "html"
-;;                                          ;; javascript
-;;                                          "js"
-;;                                          "typescript"
-;;                                          ;; python
-;;                                          "python"
-;;                                          ;; java
-;;                                          "java"
-;;                                          ;; xml
-;;                                          "xml"
-;;                                          )
-;;   "List of major modes that enable SonarLint backend for LSP mode."
-;;   :group 'lsp-sonarlint
-;;   :type 'file)
-
 (defcustom lsp-sonarlint-disable-telemetry t
   "Disable sending anonymous usage statistics to SonarSource.
 To see a sample of the data that are collected
@@ -217,13 +170,13 @@ e.g. `-Xmx1024m`."
   :type 'string)
 
 (defcustom lsp-sonarlint-vscode-plugin-store-path
-  (file-name-concat user-emacs-directory "sonarlint" "download/")
+  (file-name-concat (file-name-directory load-file-name) "sonarlint" "download/")
   "SonarLint VSCode Plugin VISX file store path."
   :group 'lsp-sonarlint
   :type 'string)
 
 (defcustom lsp-sonarlint-vscode-plugin-extract-path
-  (file-name-concat user-emacs-directory "sonarlint" "extract/")
+  (file-name-concat (file-name-directory load-file-name) "sonarlint" "extract/")
   "SonarLint VSCode Plugin VISX file extract path."
   :group 'lsp-sonarlint
   :type 'string)
@@ -241,11 +194,6 @@ e.g. `-Xmx1024m`."
 Useful for batch testing."
   :group 'lsp-sonarlint
   :type 'boolean)
-
-;; (let ((languages-directory-path (concat (file-name-directory load-file-name) "languages")))
-;;   (if (file-directory-p languages-directory-path)
-;;       (add-to-list 'load-path languages-directory-path)
-;;     (error "There was an error with the `load-file-name` function")))
 
 (defun lsp-sonarlint--remove-duplicate-plugins (jars)
   "Return copy of JARS with duplicates removed.
@@ -278,8 +226,7 @@ If the analyzer path is not a file, and
 lsp-sonarlint-plugin-autodownload is not nil it offers to
 download the analyzer, and does that."
   (let* ((lsp-sonarlint--analyzers-list (directory-files (concat lsp-sonarlint-vscode-plugin-extract-path "extension/analyzers/") t ".*\.jar")))
-    lsp-sonarlint--analyzers-list
-    ))
+    lsp-sonarlint--analyzers-list))
 
 (defun lsp-sonarlint--code-action-open-rule (_workspace params)
   "Create a buffer with rendered rule from PARAMS text in it.
@@ -297,12 +244,17 @@ temporary buffer."
 (defun lsp-sonarlint-server-start-fun (port)
   "Start lsp-sonarlint in TCP mode listening to port PORT."
   (when (eq lsp-sonarlint-server-path nil)
-    (if (equal (lsp-sonarlint--download-plugins) 0)
-        (setq lsp-sonarlint-server-path (car (directory-files (concat lsp-sonarlint-vscode-plugin-extract-path "extension/server/") t ".*\.jar")))))
+    (let ((download-times 1))
+      (unless (or (> download-times 3)
+                 (equal (lsp-sonarlint--download-plugins) 0))
+             (setq download-times (1+ download-times))
+             (delete-directory lsp-sonarlint-vscode-plugin-store-path t)
+             (delete-directory lsp-sonarlint-vscode-plugin-extract-path t)))
+    (setq lsp-sonarlint-server-path (car (directory-files (concat lsp-sonarlint-vscode-plugin-extract-path "extension/server/") t ".*\.jar"))))
   (-concat
    `("java" "-jar" ,(eval lsp-sonarlint-server-path)  ,(format "-port=%d" port))
    '("-analyzers") (mapcar (lambda (plugin-path) (format "%s" plugin-path))
-			    (lsp-sonarlint--plugin-list))))
+			   (lsp-sonarlint--plugin-list))))
 
 (defconst lsp-sonarlint--action-handlers '())
 
@@ -395,7 +347,6 @@ See NOTIFICATION-HANDLERS in lsp--client in lsp-mode."
                                                      
                                                      (message "2#########%s" (ht-get (ht-get (lsp-configuration-section "sonarlint") "sonarlint") "pathToCompileCommands")))
                                                    (add-hook 'window-state-change-hook 'lsp-sonarlint--window-change-hook)
-
                                                    ) ht) ht))
 
 ;; (advice-add 'lsp :before (lambda (&rest _args) (eval '(setf (lsp-session-server-id->folders (lsp-session)) (ht)))))
