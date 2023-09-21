@@ -4,7 +4,8 @@
 
 ;; Author: Fermin MF <fmfs@posteo.net>
 ;; Created: 13 Jun 2020
-;; Version: 0.0.1
+;; Updated: 20 Sep 2023
+;; Version: 0.0.2
 ;; Keywords: languages, tools, php, javascript, typescript, go, xml, html, java, python
 ;; URL: https://github.com/emacs-lsp/lsp-sonarlint
 ;; Package-Requires: ((emacs "27.1") (dash "2.12.0") (lsp-mode "6.3") (ht "2.3"))
@@ -146,6 +147,9 @@ e.g. `-Xmx1024m`."
   :group 'lsp-sonarlint
   :lsp-path "sonarlint.pathToCompileCommands")
 
+(defvar lsp-sonarlint--old-compilecommands-path-property ""
+  "Variable for storing old compilecommands.json path.")
+
 (defconst lsp-sonarlint-vscode-plugin-version-hash-tbl
   '(("3.21.0" . "%2B74430")
     ("3.20.2" . "%2B74272"))
@@ -271,7 +275,6 @@ temporary buffer."
    ("sonarlint.output.showAnalyzerLogs" lsp-sonarlint-show-analyzer-logs)
    ("sonarlint.output.verboseLogs" lsp-sonarlint-verbose-logs)
    ("sonarlint.ls.vmargs" lsp-sonarlint-vmargs)
-   ;; ("sonarlint.pathToCompileCommands" (lambda () (lsp-sonarlint--get-compilecommands-path)))
    ))
 
 (defun lsp-sonarlint--request-handlers ()
@@ -298,7 +301,7 @@ See REQUEST-HANDLERS in lsp--client in lsp-mode."
     ht))
 
 (defun lsp-sonarlint--get-compilecommands-path (&optional current-dir)
-  "Return the first found path of compile_commands.json file from current directory up to parent directories."
+  "Return the first found path of compile_commands.json file from `CURRENT-DIR' directory up to parent directories."
   (unless current-dir
     (setq current-dir default-directory))
   (let* ((target-file (file-name-concat current-dir "compile_commands.json"))
@@ -329,35 +332,16 @@ See NOTIFICATION-HANDLERS in lsp--client in lsp-mode."
     ;; paying attention and will notice anyway.
     (puthash "sonarlint/showNotificationForFirstSecretsIssue" (lambda (_workspace _params) nil) ht)
     (puthash "sonarlint/showRuleDescription" #'lsp-sonarlint--code-action-open-rule ht)
-    ;; (puthash "workspace/didChangeWorkspaceFolders" (lambda (_workspace _params)
-    ;;                                                  (with-lsp-workspace _workspace
-    ;;                                                  (message "3#########%s" (ht-get (ht-get (lsp-configuration-section "sonarlint") "sonarlint") "pathToCompileCommands"))
-    ;;                                                  (setq lsp-sonarlint--compilecommands-path-property (lambda () (lsp-sonarlint--get-compilecommands-path)))
-    ;;                                                  (lsp--set-configuration (lsp-configuration-section "sonarlint"))
-    ;;                                                  ;; (lsp--set-configuration (lsp-configuration-section "sonarlint"))
-    ;;                                                  ;; (lsp-register-custom-settings
-    ;;                                                  ;;  `(("pathToCompileCommands" ,(lsp-sonarlint--get-compilecommands-path))))
-                                                     
-    ;;                                                  (message "4#########%s" (ht-get (ht-get (lsp-configuration-section "sonarlint") "sonarlint") "pathToCompileCommands")))) ht)
-    ;; TODO
+    ;; Setting initiate value of CompilationDatabase. And setting a hook for updating this value while window changing.
     (puthash "sonarlint/needCompilationDatabase" (lambda (_workspace _params)
                                                    (message "Try to set sonarlint.pathToCompileCommands to \"%s\"" (lsp-sonarlint--get-compilecommands-path))
-                                                   ;; (lsp--set-custom-property
-                                                   ;;  'pathToCompileCommands (lsp-sonarlint--get-compilecommands-path) "pathToCompileCommands")
-                                                   (with-lsp-workspace _workspace
-                                                     (message "1#########%s" (ht-get (ht-get (lsp-configuration-section "sonarlint") "sonarlint") "pathToCompileCommands"))
-                                                     (setq lsp-sonarlint--compilecommands-path-property (lsp-sonarlint--get-compilecommands-path))
-                                                     (lsp--set-configuration (lsp-configuration-section "sonarlint"))
-                                                     ;; (lsp--set-configuration (lsp-configuration-section "sonarlint"))
-                                                     ;; (lsp-register-custom-settings
-                                                     ;;  `(("pathToCompileCommands" ,(lsp-sonarlint--get-compilecommands-path))))
-                                                     
-                                                     (message "2#########%s" (ht-get (ht-get (lsp-configuration-section "sonarlint") "sonarlint") "pathToCompileCommands")))
-                                                   (add-hook 'window-state-change-hook 'lsp-sonarlint--window-change-hook)
-                                                   ) ht) ht))
 
-;; (advice-add 'lsp :before (lambda (&rest _args) (eval '(setf (lsp-session-server-id->folders (lsp-session)) (ht)))))
-(defvar lsp-sonarlint--old-compilecommands-path-property "")
+                                                   (with-lsp-workspace _workspace
+                                                     (setq lsp-sonarlint--compilecommands-path-property (lsp-sonarlint--get-compilecommands-path))
+                                                     (lsp--set-configuration (lsp-configuration-section "sonarlint")))
+                                                   (add-hook 'window-state-change-hook 'lsp-sonarlint--window-change-hook)
+                                                   ) ht)
+    ht))
 
 (defun lsp-sonarlint--window-change-hook ()
   "Hook while window has changed."
